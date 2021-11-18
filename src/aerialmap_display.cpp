@@ -52,8 +52,11 @@ std::string const AerialMapDisplay::MAP_FRAME = "map";
 AerialMapDisplay::AerialMapDisplay() : Display()
 {
   topic_property_ =
-      new RosTopicProperty("Topic", "", QString::fromStdString(ros::message_traits::datatype<sensor_msgs::NavSatFix>()),
+      new RosTopicProperty("NavSatFix Topic", "", QString::fromStdString(ros::message_traits::datatype<sensor_msgs::NavSatFix>()),
                            "sensor_msgs::NavSatFix topic to subscribe to.", this, SLOT(updateTopic()));
+  imu_topic_property_ =
+      new RosTopicProperty("Imu Topic", "", QString::fromStdString(ros::message_traits::datatype<sensor_msgs::Imu>()),
+                           "sensor_msgs::Imu topic to subscribe to.", this, SLOT(updateImuTopic()));
 
   alpha_property_ =
       new FloatProperty("Alpha", 0.7, "Amount of transparency to apply to the map.", this, SLOT(updateAlpha()));
@@ -108,11 +111,13 @@ void AerialMapDisplay::onEnable()
 
   createTileObjects();
   subscribe();
+  subscribeImu();
 }
 
 void AerialMapDisplay::onDisable()
 {
   unsubscribe();
+  unsubscribeImu();
   clearAll();
 }
 
@@ -140,9 +145,38 @@ void AerialMapDisplay::subscribe()
   }
 }
 
+void AerialMapDisplay::subscribeImu()
+{
+  if (!isEnabled())
+  {
+    return;
+  }
+
+  if (!imu_topic_property_->getTopic().isEmpty())
+  {
+    try
+    {
+      ROS_INFO("Subscribing to %s", imu_topic_property_->getTopicStd().c_str());
+      imu_sub_ =
+          update_nh_.subscribe(imu_topic_property_->getTopicStd(), 1, &AerialMapDisplay::imuCallback, this);
+
+      setStatus(StatusProperty::Ok, "Imu Topic", "OK");
+    }
+    catch (ros::Exception& e)
+    {
+      setStatus(StatusProperty::Error, "Imu Topic", QString("Error subscribing: ") + e.what());
+    }
+  }
+}
+
 void AerialMapDisplay::unsubscribe()
 {
   navsat_fix_sub_.shutdown();
+}
+
+void AerialMapDisplay::unsubscribeImu()
+{
+  imu_sub_.shutdown();
 }
 
 void AerialMapDisplay::updateAlpha()
@@ -311,6 +345,20 @@ void AerialMapDisplay::updateTopic()
   subscribe();
 }
 
+void AerialMapDisplay::updateImuTopic()
+{
+  // if the NavSat topic changes, we reset everything
+
+  if (!isEnabled())
+  {
+    return;
+  }
+
+  unsubscribeImu();
+  subscribeImu();
+}
+
+
 void AerialMapDisplay::clearAll()
 {
   ref_fix_ = nullptr;
@@ -392,6 +440,24 @@ void AerialMapDisplay::navFixCallback(sensor_msgs::NavSatFixConstPtr const& msg)
   updateCenterTile(msg);
 
   setStatus(StatusProperty::Ok, "Message", "NavSatFix message received");
+}
+
+void AerialMapDisplay::imuCallback(sensor_msgs::ImuConstPtr const& msg)
+{
+  static tf2_ros::TransformBroadcaster br;
+  geometry_msgs::TransformStamped transformStamped;
+
+  transformStamped.header.stamp = ros::Time::now();
+  transformStamped.header.frame_id = MAP_FRAME;
+  transformStamped.child_frame_id = "map_fixed";
+  transformStamped.transform.rotation.x = msg->orientation.x;
+  transformStamped.transform.rotation.y = msg->orientation.y;
+  transformStamped.transform.rotation.z = msg->orientation.z;
+  transformStamped.transform.rotation.w = msg->orientation.w;
+
+  // should we multiply -1 with the orientation?
+
+  br.sendTransform(transformStamped);
 }
 
 void AerialMapDisplay::updateCenterTile(sensor_msgs::NavSatFixConstPtr const& msg)
@@ -729,6 +795,7 @@ void AerialMapDisplay::reset()
   Display::reset();
   // unsubscribe, clear, resubscribe
   updateTopic();
+  updateImuTopic();
 }
 
 }  // namespace rviz
