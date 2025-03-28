@@ -1167,7 +1167,7 @@ void AerialMapDisplay::transformTileToMapFrame()
     tf2::Quaternion orientation_navsat2tile;
     orientation_navsat2tile.setEulerZYX(yaw_navsat2tile, 0, 0);
     tf2::Quaternion orientation_map2tile = orientation_map2navsat * orientation_navsat2tile;
-    center_tile_pose_.header.frame_id = map_frame_;
+    center_tile_pose_.header.frame_id = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
     center_tile_pose_.header.stamp = ref_fix_->header.stamp;
     center_tile_pose_.pose.orientation = tf2::toMsg(orientation_map2tile);
 
@@ -1178,7 +1178,7 @@ void AerialMapDisplay::transformTileToMapFrame()
   }
   else
   {
-    center_tile_pose_.header.frame_id = map_frame_;
+    center_tile_pose_.header.frame_id = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
     center_tile_pose_.header.stamp = ref_fix_->header.stamp;
     tf2::toMsg(offset_map2navsat - offset_navsat2tile, center_tile_pose_.pose.position);
   }
