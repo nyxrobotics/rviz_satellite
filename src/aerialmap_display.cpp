@@ -20,6 +20,7 @@ limitations under the License. */
 #include <OGRE/OgreSceneNode.h>
 #include <OGRE/OgreTechnique.h>
 #include <OGRE/OgreTextureManager.h>
+#include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Vector3.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
@@ -166,6 +167,7 @@ AerialMapDisplay::AerialMapDisplay() : Display()
   tf_reference_update_duration_ = { 1, 0 };
   tf_reference_update_timer_ =
       threaded_nh_.createTimer(tf_reference_update_duration_, &AerialMapDisplay::tfReferencePeriodicUpdate, this);
+  reset_pose_lpf_ = true;
 }
 
 AerialMapDisplay::~AerialMapDisplay()
@@ -183,6 +185,7 @@ void AerialMapDisplay::onInitialize()
   xy_reference_property_->setFrameManager(context_->getFrameManager());
   z_reference_property_->setFrameManager(context_->getFrameManager());
   updateMapTransformType();
+  reset_pose_lpf_ = true;
 }
 
 void AerialMapDisplay::onEnable()
@@ -190,6 +193,7 @@ void AerialMapDisplay::onEnable()
   createTileObjects();
   subscribe();
   subscribeImu();
+  reset_pose_lpf_ = true;
 }
 
 void AerialMapDisplay::onDisable()
@@ -508,6 +512,7 @@ void AerialMapDisplay::updateMapFrame()
     updateCenterTile(ref_fix_);
     transformTileToReferenceFrame();
   }
+  reset_pose_lpf_ = true;
 }
 
 void AerialMapDisplay::updateDeviceFrame()
@@ -530,6 +535,7 @@ void AerialMapDisplay::updateDeviceFrame()
     updateCenterTile(ref_fix_);
     transformTileToReferenceFrame();
   }
+  reset_pose_lpf_ = true;
 }
 
 void AerialMapDisplay::updateUtmFrame()
@@ -846,6 +852,7 @@ bool AerialMapDisplay::updateCenterTile(sensor_msgs::NavSatFixConstPtr const& ms
   TileCoordinate const tile_coordinates = fromWGSCoordinate<int>(reference_wgs, zoom_);
   TileId const new_center_tile_id{ tile_url_, tile_coordinates, zoom_ };
   bool const center_tile_changed = (!center_tile_ || !(new_center_tile_id == *center_tile_));
+  reset_pose_lpf_ = center_tile_changed;
   if (center_tile_changed)
   {
     // TODO: Maybe we should update the transform here even if the center tile did not change?
@@ -1089,6 +1096,38 @@ void AerialMapDisplay::transformTileToReferenceFrame()
   }
 }
 
+void AerialMapDisplay::applyLowPassFilter(const geometry_msgs::PoseStamped& input_pose,
+                                          geometry_msgs::PoseStamped& output_pose, bool force_reset)
+{
+  constexpr double alpha = 0.05;  // smoothing factor
+
+  if (force_reset || output_pose.header.frame_id.empty())
+  {
+    output_pose = input_pose;
+    return;
+  }
+
+  output_pose.header = input_pose.header;
+
+  // LPF for position
+  tf2::Vector3 prev_pos, curr_pos;
+  tf2::fromMsg(output_pose.pose.position, prev_pos);
+  tf2::fromMsg(input_pose.pose.position, curr_pos);
+  tf2::Vector3 filtered_pos = alpha * curr_pos + (1.0 - alpha) * prev_pos;
+  geometry_msgs::Point filtered_position;
+  filtered_position.x = filtered_pos.x();
+  filtered_position.y = filtered_pos.y();
+  filtered_position.z = filtered_pos.z();
+  output_pose.pose.position = filtered_position;
+
+  // LPF for orientation using SLERP
+  tf2::Quaternion prev_q, curr_q;
+  tf2::fromMsg(output_pose.pose.orientation, prev_q);
+  tf2::fromMsg(input_pose.pose.orientation, curr_q);
+  tf2::Quaternion filtered_q = prev_q.slerp(curr_q, alpha);
+  output_pose.pose.orientation = tf2::toMsg(filtered_q);
+}
+
 void AerialMapDisplay::transformTileToMapFrame()
 {
   if (!ref_fix_ or !center_tile_)
@@ -1096,6 +1135,7 @@ void AerialMapDisplay::transformTileToMapFrame()
     ROS_FATAL_THROTTLE_NAMED(2, "rviz_satellite", "ref_fix_ not set, can't create transforms");
     return;
   }
+
   const std::string map_frame = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
   const std::string device_frame = device_frame_.empty() ? ref_fix_->header.frame_id : device_frame_;
 
@@ -1157,29 +1197,43 @@ void AerialMapDisplay::transformTileToMapFrame()
   tf2::Matrix3x3 matrix_map2navsat(orientation_map2device);
   // translation of the center-tile w.r.t. the NavSatFix frame
   tf2::Vector3 offset_device2tile = { center_tile_offset_x, center_tile_offset_y, 0 };
+
+  geometry_msgs::PoseStamped reference_center_tile_pose;
+  reference_center_tile_pose.header.stamp = ref_fix_->header.stamp;
+  reference_center_tile_pose.header.frame_id = map_frame;
+
   if (!imu_topic_property_->getTopic().isEmpty())
   {
     // Fix orientation using imu
     tf2::Matrix3x3 matrix_device2tile;
     matrix_device2tile.setEulerZYX(yaw_device2tile, 0, 0);
+
     tf2::Quaternion orientation_device2tile;
     orientation_device2tile.setEulerZYX(yaw_device2tile, 0, 0);
-    tf2::Quaternion orientation_map2tile = orientation_map2device * orientation_device2tile;
-    center_tile_pose_.header.frame_id = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
-    center_tile_pose_.header.stamp = ref_fix_->header.stamp;
-    center_tile_pose_.pose.orientation = tf2::toMsg(orientation_map2tile);
 
+    tf2::Quaternion orientation_map2tile = orientation_map2device * orientation_device2tile;
     tf2::Matrix3x3 matrix_map2tile(orientation_map2tile);
+
     tf2::Vector3 offset_map2tile = offset_map2device - matrix_map2navsat * matrix_device2tile * offset_device2tile;
-    // tf2::Vector3 offset_map2tile = matrix_device2tile * (-offset_device2tile);
-    tf2::toMsg(offset_map2tile, center_tile_pose_.pose.position);
+
+    reference_center_tile_pose.pose.orientation = tf2::toMsg(orientation_map2tile);
+    reference_center_tile_pose.pose.position.x = offset_map2tile.x();
+    reference_center_tile_pose.pose.position.y = offset_map2tile.y();
+    reference_center_tile_pose.pose.position.z = offset_map2tile.z();
   }
   else
   {
-    center_tile_pose_.header.frame_id = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
-    center_tile_pose_.header.stamp = ref_fix_->header.stamp;
-    tf2::toMsg(offset_map2device - offset_device2tile, center_tile_pose_.pose.position);
+    tf2::Vector3 offset_map2tile = offset_map2device - offset_device2tile;
+    reference_center_tile_pose.pose.orientation = tf2::toMsg(orientation_map2device);
+    reference_center_tile_pose.pose.position.x = offset_map2tile.x();
+    reference_center_tile_pose.pose.position.y = offset_map2tile.y();
+    reference_center_tile_pose.pose.position.z = offset_map2tile.z();
   }
+
+  // Apply low-pass filter to the map->tile pose
+  bool reset = reset_pose_lpf_;
+  applyLowPassFilter(reference_center_tile_pose, center_tile_pose_, reset);
+  reset_pose_lpf_ = false;
 }
 
 void AerialMapDisplay::transformTileToUtmFrame()

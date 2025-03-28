@@ -22,6 +22,9 @@ limitations under the License. */
 #include <rviz/display.h>
 #include <sensor_msgs/Imu.h>
 #include <sensor_msgs/NavSatFix.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Vector3.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2_ros/buffer.h>
 
 #include <boost/optional.hpp>
@@ -178,6 +181,9 @@ protected:
    */
   void tfReferencePeriodicUpdate(const ros::TimerEvent&);
 
+  void applyLowPassFilter(const geometry_msgs::PoseStamped& input_pose, geometry_msgs::PoseStamped& output_pose,
+                          bool force_reset = false);
+
   /**
    * Tile with associated Ogre data
    */
@@ -267,6 +273,7 @@ protected:
   boost::optional<TileId> center_tile_{ boost::none };
   /// translation of the center-tile w.r.t. the map/utm frame
   geometry_msgs::PoseStamped center_tile_pose_;
+  bool reset_pose_lpf_ = false;
 
   /// buffer for tf lookups not related to fixed-frame
   std::shared_ptr<tf2_ros::Buffer const> tf_buffer_{ nullptr };
