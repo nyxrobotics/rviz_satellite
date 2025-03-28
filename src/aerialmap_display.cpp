@@ -1154,9 +1154,9 @@ void AerialMapDisplay::transformTileToMapFrame()
   double yaw_navsat2tile = -imu_yaw;
   tf2::Vector3 offset_map2navsat;
   tf2::fromMsg(tf_map2device.transform.translation, offset_map2navsat);
-  tf2::Quaternion orientation_map2navsat(tf_map2device.transform.rotation.x, tf_map2device.transform.rotation.y,
+  tf2::Quaternion orientation_map2device(tf_map2device.transform.rotation.x, tf_map2device.transform.rotation.y,
                                          tf_map2device.transform.rotation.z, tf_map2device.transform.rotation.w);
-  tf2::Matrix3x3 matrix_map2navsat(orientation_map2navsat);
+  tf2::Matrix3x3 matrix_map2navsat(orientation_map2device);
   // translation of the center-tile w.r.t. the NavSatFix frame
   tf2::Vector3 offset_navsat2tile = { center_tile_offset_x, center_tile_offset_y, 0 };
   if (!imu_topic_property_->getTopic().isEmpty())
@@ -1164,9 +1164,9 @@ void AerialMapDisplay::transformTileToMapFrame()
     // Fix orientation using imu
     tf2::Matrix3x3 matrix_navsat2tile;
     matrix_navsat2tile.setEulerZYX(yaw_navsat2tile, 0, 0);
-    tf2::Quaternion orientation_navsat2tile;
-    orientation_navsat2tile.setEulerZYX(yaw_navsat2tile, 0, 0);
-    tf2::Quaternion orientation_map2tile = orientation_map2navsat * orientation_navsat2tile;
+    tf2::Quaternion orientation_device2tile;
+    orientation_device2tile.setEulerZYX(yaw_navsat2tile, 0, 0);
+    tf2::Quaternion orientation_map2tile = orientation_map2device * orientation_device2tile;
     center_tile_pose_.header.frame_id = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
     center_tile_pose_.header.stamp = ref_fix_->header.stamp;
     center_tile_pose_.pose.orientation = tf2::toMsg(orientation_map2tile);
