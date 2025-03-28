@@ -84,6 +84,7 @@ protected Q_SLOTS:
   void updateBlocks();
   void updateMapTransformType();
   void updateMapFrame();
+  void updateDeviceFrame();
   void updateUtmFrame();
   void updateUtmZone();
   void updateXYReference();
@@ -211,6 +212,7 @@ protected:
   Property* rough_update_property_;
   EnumProperty* map_transform_type_property_;
   TfFrameProperty* map_frame_property_;
+  TfFrameProperty* device_frame_property_;
   TfFrameProperty* utm_frame_property_;
   IntProperty* utm_zone_property_;
   PositionReferenceProperty* xy_reference_property_;
@@ -233,6 +235,7 @@ protected:
   MapTransformType map_transform_type_;
   /// the map frame, rigidly attached to the world with ENU convention - see https://www.ros.org/reps/rep-0105.html#map
   std::string map_frame_;
+  std::string device_frame_;
   /// the utm frame, representing a UTM coordinate frame in a chosen zone
   std::string utm_frame_;
   /// UTM zone to work in

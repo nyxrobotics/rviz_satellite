@@ -84,9 +84,14 @@ AerialMapDisplay::AerialMapDisplay() : Display()
   map_transform_type_ = static_cast<MapTransformType>(map_transform_type_property_->getOptionInt());
 
   map_frame_property_ =
-      new TfFrameProperty("Map Frame", "map", "Frame ID of the map.", this, nullptr, false, SLOT(updateMapFrame()));
+      new TfFrameProperty("Map Frame", "", "Frame ID of the map.", this, nullptr, false, SLOT(updateMapFrame()));
   map_frame_property_->setShouldBeSaved(true);
   map_frame_ = map_frame_property_->getFrameStd();
+
+  device_frame_property_ = new TfFrameProperty("GNSS device Frame", "", "Frame ID of the device.", this, nullptr, false,
+                                               SLOT(updateMapFrame()));
+  device_frame_property_->setShouldBeSaved(true);
+  device_frame_ = device_frame_property_->getFrameStd();
 
   utm_frame_property_ = new TfFrameProperty("UTM Frame", "utm", "Frame ID of the UTM frame.", this, nullptr, false,
                                             SLOT(updateUtmFrame()));
@@ -303,7 +308,8 @@ void AerialMapDisplay::updateDrawUnder()
 void AerialMapDisplay::updateRoughUpdate()
 {
   bool next_property = rough_update_property_->getValue().toBool();
-  if(next_property != rough_update_){
+  if (next_property != rough_update_)
+  {
     transformTileToReferenceFrame();
   }
   rough_update_ = next_property;
@@ -487,6 +493,28 @@ void AerialMapDisplay::updateMapFrame()
   }
 
   map_frame_ = map_frame;
+
+  if (!isEnabled())
+  {
+    return;
+  }
+
+  if (ref_fix_)
+  {
+    updateCenterTile(ref_fix_);
+    transformTileToReferenceFrame();
+  }
+}
+
+void AerialMapDisplay::updateDeviceFrame()
+{
+  auto const device_frame = device_frame_property_->getFrameStd();
+  if (device_frame == device_frame_)
+  {
+    return;
+  }
+
+  device_frame_ = device_frame;
 
   if (!isEnabled())
   {
