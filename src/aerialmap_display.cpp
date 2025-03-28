@@ -90,7 +90,7 @@ AerialMapDisplay::AerialMapDisplay() : Display()
   map_frame_ = map_frame_property_->getFrameStd();
 
   device_frame_property_ = new TfFrameProperty("GNSS device Frame", "", "Frame ID of the device.", this, nullptr, false,
-                                               SLOT(updateMapFrame()));
+                                               SLOT(updateDeviceFrame()));
   device_frame_property_->setShouldBeSaved(true);
   device_frame_ = device_frame_property_->getFrameStd();
 
@@ -178,6 +178,7 @@ void AerialMapDisplay::onInitialize()
 {
   tf_buffer_ = context_->getFrameManager()->getTF2BufferPtr();
   map_frame_property_->setFrameManager(context_->getFrameManager());
+  device_frame_property_->setFrameManager(context_->getFrameManager());
   utm_frame_property_->setFrameManager(context_->getFrameManager());
   xy_reference_property_->setFrameManager(context_->getFrameManager());
   z_reference_property_->setFrameManager(context_->getFrameManager());
@@ -459,11 +460,13 @@ void AerialMapDisplay::updateMapTransformType()
       utm_frame_property_->hide();
       utm_zone_property_->hide();
       map_frame_property_->show();
+      device_frame_property_->show();
       break;
     case MapTransformType::VIA_UTM_FRAME:
       utm_frame_property_->show();
       utm_zone_property_->show();
       map_frame_property_->hide();
+      device_frame_property_->show();
       break;
   }
 
