@@ -1096,6 +1096,8 @@ void AerialMapDisplay::transformTileToMapFrame()
     ROS_FATAL_THROTTLE_NAMED(2, "rviz_satellite", "ref_fix_ not set, can't create transforms");
     return;
   }
+  const std::string map_frame = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
+  const std::string device_frame = device_frame_.empty() ? ref_fix_->header.frame_id : device_frame_;
 
   // We will use three frames in this function:
   //
@@ -1114,8 +1116,6 @@ void AerialMapDisplay::transformTileToMapFrame()
   {
     // Use a real TfBuffer for looking up this transform. The FrameManager only supplies transform to/from the
     // currently selected RViz fixed-frame, which is of no help here.
-    std::string map_frame = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
-    std::string device_frame = device_frame_.empty() ? ref_fix_->header.frame_id : device_frame_;
     tf_map2device = tf_buffer_->lookupTransform(map_frame, device_frame, ros::Time(0));
   }
   catch (tf2::TransformException const& ex)
@@ -1125,8 +1125,6 @@ void AerialMapDisplay::transformTileToMapFrame()
     try
     {
       ros::WallDuration(0.01).sleep();
-      std::string map_frame = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
-      std::string device_frame = device_frame_.empty() ? ref_fix_->header.frame_id : device_frame_;
       tf_map2device = tf_buffer_->lookupTransform(map_frame, device_frame, ros::Time(0));
     }
     catch (tf2::TransformException const& ex)
@@ -1151,36 +1149,36 @@ void AerialMapDisplay::transformTileToMapFrame()
   tf2::Matrix3x3 t_matrix_imu(imu_orientation_);
   double imu_yaw, imu_pitch, imu_roll;
   t_matrix_imu.getEulerZYX(imu_yaw, imu_pitch, imu_roll);
-  double yaw_navsat2tile = -imu_yaw;
-  tf2::Vector3 offset_map2navsat;
-  tf2::fromMsg(tf_map2device.transform.translation, offset_map2navsat);
+  double yaw_device2tile = -imu_yaw;
+  tf2::Vector3 offset_map2device;
+  tf2::fromMsg(tf_map2device.transform.translation, offset_map2device);
   tf2::Quaternion orientation_map2device(tf_map2device.transform.rotation.x, tf_map2device.transform.rotation.y,
                                          tf_map2device.transform.rotation.z, tf_map2device.transform.rotation.w);
   tf2::Matrix3x3 matrix_map2navsat(orientation_map2device);
   // translation of the center-tile w.r.t. the NavSatFix frame
-  tf2::Vector3 offset_navsat2tile = { center_tile_offset_x, center_tile_offset_y, 0 };
+  tf2::Vector3 offset_device2tile = { center_tile_offset_x, center_tile_offset_y, 0 };
   if (!imu_topic_property_->getTopic().isEmpty())
   {
     // Fix orientation using imu
-    tf2::Matrix3x3 matrix_navsat2tile;
-    matrix_navsat2tile.setEulerZYX(yaw_navsat2tile, 0, 0);
+    tf2::Matrix3x3 matrix_device2tile;
+    matrix_device2tile.setEulerZYX(yaw_device2tile, 0, 0);
     tf2::Quaternion orientation_device2tile;
-    orientation_device2tile.setEulerZYX(yaw_navsat2tile, 0, 0);
+    orientation_device2tile.setEulerZYX(yaw_device2tile, 0, 0);
     tf2::Quaternion orientation_map2tile = orientation_map2device * orientation_device2tile;
     center_tile_pose_.header.frame_id = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
     center_tile_pose_.header.stamp = ref_fix_->header.stamp;
     center_tile_pose_.pose.orientation = tf2::toMsg(orientation_map2tile);
 
     tf2::Matrix3x3 matrix_map2tile(orientation_map2tile);
-    tf2::Vector3 offset_map2tile = offset_map2navsat - matrix_map2navsat * matrix_navsat2tile * offset_navsat2tile;
-    // tf2::Vector3 offset_map2tile = matrix_navsat2tile * (-offset_navsat2tile);
+    tf2::Vector3 offset_map2tile = offset_map2device - matrix_map2navsat * matrix_device2tile * offset_device2tile;
+    // tf2::Vector3 offset_map2tile = matrix_device2tile * (-offset_device2tile);
     tf2::toMsg(offset_map2tile, center_tile_pose_.pose.position);
   }
   else
   {
     center_tile_pose_.header.frame_id = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
     center_tile_pose_.header.stamp = ref_fix_->header.stamp;
-    tf2::toMsg(offset_map2navsat - offset_navsat2tile, center_tile_pose_.pose.position);
+    tf2::toMsg(offset_map2device - offset_device2tile, center_tile_pose_.pose.position);
   }
 }
 
