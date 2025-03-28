@@ -139,13 +139,13 @@ AerialMapDisplay::AerialMapDisplay() : Display()
   rough_update_ = rough_update_property_->getValue().toBool();
 
   // properties for map
-  tile_url_property_ =
-      new StringProperty("Object URI", "", "URL from which to retrieve map tiles.", this, SLOT(updateTileUrl()));
+  tile_url_property_ = new StringProperty("Object URI", "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                                          "URL from which to retrieve map tiles.", this, SLOT(updateTileUrl()));
   tile_url_property_->setShouldBeSaved(true);
   tile_url_ = tile_url_property_->getStdString();
 
   QString const zoom_desc = QString::fromStdString("Zoom level (0 - " + std::to_string(MAX_ZOOM) + ")");
-  zoom_property_ = new IntProperty("Zoom", 16, zoom_desc, this, SLOT(updateZoom()));
+  zoom_property_ = new IntProperty("Zoom", 19, zoom_desc, this, SLOT(updateZoom()));
   zoom_property_->setMin(0);
   zoom_property_->setMax(MAX_ZOOM);
   zoom_property_->setShouldBeSaved(true);
