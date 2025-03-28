@@ -25,6 +25,7 @@ limitations under the License. */
 
 #include <GeographicLib/UTMUPS.hpp>
 #include <regex>
+#include <string>
 #include <unordered_map>
 
 #include "mercator.h"
@@ -1105,12 +1106,14 @@ void AerialMapDisplay::transformTileToMapFrame()
   // translation of NavSatFix frame w.r.t. the map frame
   // NOTE: due to ENU convention, orientation is not needed, the tiles are rigidly attached to ENU
 
-  geometry_msgs::TransformStamped tf_map2navsat;
+  geometry_msgs::TransformStamped tf_map2device;
   try
   {
     // Use a real TfBuffer for looking up this transform. The FrameManager only supplies transform to/from the
     // currently selected RViz fixed-frame, which is of no help here.
-    tf_map2navsat = tf_buffer_->lookupTransform(map_frame_, ref_fix_->header.frame_id, ros::Time(0));
+    std::string map_frame = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
+    std::string device_frame = device_frame_.empty() ? ref_fix_->header.frame_id : device_frame_;
+    tf_map2device = tf_buffer_->lookupTransform(map_frame, device_frame, ros::Time(0));
   }
   catch (tf2::TransformException const& ex)
   {
@@ -1119,7 +1122,9 @@ void AerialMapDisplay::transformTileToMapFrame()
     try
     {
       ros::WallDuration(0.01).sleep();
-      tf_map2navsat = tf_buffer_->lookupTransform(map_frame_, ref_fix_->header.frame_id, ros::Time(0));
+      std::string map_frame = map_frame_.empty() ? fixed_frame_.toStdString() : map_frame_;
+      std::string device_frame = device_frame_.empty() ? ref_fix_->header.frame_id : device_frame_;
+      tf_map2device = tf_buffer_->lookupTransform(map_frame, device_frame, ros::Time(0));
     }
     catch (tf2::TransformException const& ex)
     {
@@ -1145,9 +1150,9 @@ void AerialMapDisplay::transformTileToMapFrame()
   t_matrix_imu.getEulerZYX(imu_yaw, imu_pitch, imu_roll);
   double yaw_navsat2tile = -imu_yaw;
   tf2::Vector3 offset_map2navsat;
-  tf2::fromMsg(tf_map2navsat.transform.translation, offset_map2navsat);
-  tf2::Quaternion orientation_map2navsat(tf_map2navsat.transform.rotation.x, tf_map2navsat.transform.rotation.y,
-                                         tf_map2navsat.transform.rotation.z, tf_map2navsat.transform.rotation.w);
+  tf2::fromMsg(tf_map2device.transform.translation, offset_map2navsat);
+  tf2::Quaternion orientation_map2navsat(tf_map2device.transform.rotation.x, tf_map2device.transform.rotation.y,
+                                         tf_map2device.transform.rotation.z, tf_map2device.transform.rotation.w);
   tf2::Matrix3x3 matrix_map2navsat(orientation_map2navsat);
   // translation of the center-tile w.r.t. the NavSatFix frame
   tf2::Vector3 offset_navsat2tile = { center_tile_offset_x, center_tile_offset_y, 0 };
